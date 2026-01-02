@@ -71,6 +71,22 @@ struct MenuBarList: View {
                 Divider()
                 
                 Button(action: {
+                    viewModel.toggleLaunchAtLogin()
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: viewModel.launchAtLogin ? "checkmark.square.fill" : "square")
+                            .foregroundColor(viewModel.launchAtLogin ? .blue : .secondary)
+                        Text(LocalizationHelper.Strings.launchAtLogin)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                
+                Divider()
+                
+                Button(action: {
                     viewModel.quit()
                 }) {
                     HStack {

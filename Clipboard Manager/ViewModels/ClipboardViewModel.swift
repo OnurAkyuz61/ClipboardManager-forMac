@@ -8,11 +8,13 @@
 import Foundation
 import Combine
 import AppKit
+import ServiceManagement
 
 /// Clipboard yönetimi için ViewModel (MVVM mimarisi)
 @MainActor
 class ClipboardViewModel: ObservableObject {
     @Published var items: [ClipboardItem] = []
+    @Published var launchAtLogin: Bool = false
     
     private var timer: Timer?
     private var lastChangeCount: Int = 0
@@ -22,6 +24,8 @@ class ClipboardViewModel: ObservableObject {
         // İlk değişim sayacını kaydet
         lastChangeCount = PasteboardHelper.getChangeCount()
         startMonitoring()
+        // Otomatik başlatma durumunu kontrol et
+        launchAtLogin = isLaunchAtLoginEnabled()
     }
     
     deinit {
@@ -92,6 +96,41 @@ class ClipboardViewModel: ObservableObject {
     /// Uygulamadan çıkar
     func quit() {
         NSApplication.shared.terminate(nil)
+    }
+    
+    /// Otomatik başlatmanın aktif olup olmadığını kontrol eder
+    private func isLaunchAtLoginEnabled() -> Bool {
+        // macOS 13.0+ için ServiceManagement framework kullan
+        if #available(macOS 13.0, *) {
+            let status = SMAppService.mainApp.status
+            return status == .enabled
+        } else {
+            // macOS 13.0'dan önceki sürümler için eski yöntem (gerekirse)
+            return false
+        }
+    }
+    
+    /// Otomatik başlatmayı açıp kapatır
+    func toggleLaunchAtLogin() {
+        if #available(macOS 13.0, *) {
+            let service = SMAppService.mainApp
+            
+            do {
+                if launchAtLogin {
+                    // Login Items'dan kaldır
+                    try service.unregister()
+                    launchAtLogin = false
+                } else {
+                    // Login Items'a ekle
+                    try service.register()
+                    launchAtLogin = true
+                }
+            } catch {
+                print("Otomatik başlatma ayarı değiştirilemedi: \(error.localizedDescription)")
+                // Hata durumunda durumu tekrar kontrol et
+                launchAtLogin = isLaunchAtLoginEnabled()
+            }
+        }
     }
 }
 

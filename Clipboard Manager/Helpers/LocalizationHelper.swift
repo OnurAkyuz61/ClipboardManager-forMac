@@ -32,6 +32,10 @@ class LocalizationHelper {
         static var quit: String {
             isTurkish ? "Çıkış" : "Quit"
         }
+        
+        static var launchAtLogin: String {
+            isTurkish ? "Otomatik Başlat" : "Launch at Login"
+        }
     }
 }
 

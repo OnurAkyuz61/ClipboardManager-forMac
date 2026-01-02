@@ -22,6 +22,7 @@
 - ✅ Geçmişi temizleme özelliği
 - ✅ Dock'ta görünmez (sadece menü çubuğunda)
 - ✅ Otomatik dil algılama (Türkçe/İngilizce)
+- ✅ Otomatik başlatma özelliği (bilgisayar açıldığında otomatik başlatma)
 
 ## Gereksinimler
 
@@ -57,9 +58,21 @@ cd ClipboardManager-forMac
 3. Menü çubuğundaki ikona tıklayarak son kopyalanan metinleri görebilirsiniz
 4. Bir metne tıklayarak tekrar panoya kopyalayabilirsiniz
 5. "Geçmişi Temizle" / "Clear History" butonu ile tüm geçmişi silebilirsiniz
-6. "Çıkış" / "Quit" butonu ile uygulamadan çıkabilirsiniz
+6. "Otomatik Başlat" / "Launch at Login" butonu ile uygulamanın bilgisayar açıldığında otomatik başlamasını açıp kapatabilirsiniz
+7. "Çıkış" / "Quit" butonu ile uygulamadan çıkabilirsiniz
 
 **Not:** Uygulama sistem dilinize göre otomatik olarak Türkçe veya İngilizce arayüz gösterir.
+
+### Otomatik Başlatma
+
+Uygulamanın bilgisayar açıldığında veya yeniden başlatıldığında otomatik olarak başlamasını istiyorsanız:
+
+1. Menü çubuğundaki clipboard ikonuna tıklayın
+2. "Otomatik Başlat" / "Launch at Login" butonuna tıklayın
+3. Butonun yanında bir onay işareti (✓) görünecektir - bu, özelliğin aktif olduğunu gösterir
+4. Özelliği kapatmak için tekrar aynı butona tıklayın
+
+Bu özellik macOS'un Login Items sistemini kullanır ve Sistem Ayarları > Kullanıcılar ve Gruplar > Giriş Öğeleri bölümünden de kontrol edilebilir.
 
 ## Proje Yapısı
 
