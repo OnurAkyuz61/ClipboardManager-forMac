@@ -1,13 +1,6 @@
-//
-//  ClipboardItem.swift
-//  ClipHistory
-//
-//  Created by Onur Akyüz on 25.12.2025.
-//
-
 import Foundation
 
-/// Hassas veri türü
+
 enum SensitiveKind: String, Equatable, Sendable, Codable {
     case jwt
     case apiKey
@@ -16,7 +9,7 @@ enum SensitiveKind: String, Equatable, Sendable, Codable {
     case passwordManager
 }
 
-/// Panodaki içeriğin algılanan türü
+
 enum ClipboardContentKind: Equatable, Sendable, Codable {
     case plain
     case url
@@ -29,18 +22,18 @@ enum ClipboardContentKind: Equatable, Sendable, Codable {
     case unixTimestamp(dateString: String)
 }
 
-/// Geçmiş filtreleri
+
 enum HistoryFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case pinned
     case links
     case dev
     case secrets
-    
+
     var id: String { rawValue }
 }
 
-/// Panodan kopyalanan bir metin öğesini temsil eden model
+
 struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     let text: String
@@ -52,7 +45,7 @@ struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
     var contentKind: ClipboardContentKind
     var isRevealed: Bool
     var isPinned: Bool
-    
+
     init(
         id: UUID = UUID(),
         text: String,
@@ -76,16 +69,16 @@ struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
         self.isRevealed = isRevealed
         self.isPinned = isPinned
     }
-    
-    /// UI'da gösterilecek metin (hassas ise maskeli)
+
+
     var displayText: String {
         if isSensitive && !isRevealed {
             return String(repeating: "•", count: min(max(text.count, 8), 24))
         }
         return text
     }
-    
-    /// Geliştirici / dönüştürülebilir içerik mi?
+
+
     var isDevContent: Bool {
         switch contentKind {
         case .json, .base64, .urlEncoded, .hexColor, .jwtToken, .curlCommand, .unixTimestamp:
@@ -94,7 +87,7 @@ struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
             return false
         }
     }
-    
+
     var isLinkContent: Bool {
         if case .url = contentKind { return true }
         return wasURLCleaned

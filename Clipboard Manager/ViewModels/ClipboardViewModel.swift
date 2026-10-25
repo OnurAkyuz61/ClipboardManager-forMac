@@ -1,16 +1,9 @@
-//
-//  ClipboardViewModel.swift
-//  ClipHistory
-//
-//  Created by Onur Akyüz on 25.12.2025.
-//
-
 import Foundation
 import Combine
 import AppKit
 import ServiceManagement
 
-/// Clipboard yönetimi için ViewModel (MVVM mimarisi)
+
 @MainActor
 final class ClipboardViewModel: ObservableObject {
     @Published var items: [ClipboardItem] = []
@@ -18,9 +11,8 @@ final class ClipboardViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var selectedFilter: HistoryFilter = .all
     @Published var lastCopiedItemId: UUID?
-    
-    // MARK: - Smart Rules (UserDefaults)
-    
+
+
     @Published var autoCleanURLs: Bool {
         didSet { UserDefaults.standard.set(autoCleanURLs, forKey: Keys.autoCleanURLs) }
     }
@@ -39,7 +31,7 @@ final class ClipboardViewModel: ObservableObject {
             enforceLimitsAndPersist()
         }
     }
-    
+
     private enum Keys {
         static let autoCleanURLs = "smart.autoCleanURLs"
         static let autoClearSecrets = "smart.autoClearSecrets"
@@ -47,17 +39,17 @@ final class ClipboardViewModel: ObservableObject {
         static let secretClearSeconds = "smart.secretClearSeconds"
         static let maxItems = "smart.maxItems"
     }
-    
+
     private var timer: Timer?
     private var lastChangeCount: Int = 0
     private var ignoreNextPasteboardChange = false
     private var isProcessing = false
     private var copiedResetTask: Task<Void, Never>?
-    
-    /// Filtrelenmiş + aranmış liste (pinliler üstte tutulur)
+
+
     var filteredItems: [ClipboardItem] {
         var result = items
-        
+
         switch selectedFilter {
         case .all:
             break
@@ -70,15 +62,15 @@ final class ClipboardViewModel: ObservableObject {
         case .secrets:
             result = result.filter(\.isSensitive)
         }
-        
+
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty {
             result = result.filter { $0.text.localizedCaseInsensitiveContains(query) }
         }
-        
+
         return result
     }
-    
+
     init() {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Keys.autoCleanURLs) == nil {
@@ -96,7 +88,7 @@ final class ClipboardViewModel: ObservableObject {
         if defaults.object(forKey: Keys.maxItems) == nil {
             defaults.set(30, forKey: Keys.maxItems)
         }
-        
+
         self.autoCleanURLs = defaults.bool(forKey: Keys.autoCleanURLs)
         self.autoClearSecrets = defaults.bool(forKey: Keys.autoClearSecrets)
         self.showDevTools = defaults.bool(forKey: Keys.showDevTools)
@@ -104,20 +96,19 @@ final class ClipboardViewModel: ObservableObject {
         self.secretClearSeconds = storedTimeout > 0 ? storedTimeout : 60
         let storedMax = defaults.integer(forKey: Keys.maxItems)
         self.maxItems = [15, 30, 50].contains(storedMax) ? storedMax : 30
-        
+
         loadPersistedHistory()
-        
+
         lastChangeCount = PasteboardHelper.getChangeCount()
         startMonitoring()
         launchAtLogin = isLaunchAtLoginEnabled()
     }
-    
+
     deinit {
         timer?.invalidate()
     }
-    
-    // MARK: - Monitoring
-    
+
+
     private func startMonitoring() {
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -125,43 +116,42 @@ final class ClipboardViewModel: ObservableObject {
             }
         }
     }
-    
+
     private func tick() {
         purgeExpiredSecrets()
         checkPasteboard()
     }
-    
+
     private func checkPasteboard() {
         let currentChangeCount = PasteboardHelper.getChangeCount()
         guard currentChangeCount != lastChangeCount else { return }
-        
+
         lastChangeCount = currentChangeCount
-        
+
         if ignoreNextPasteboardChange {
             ignoreNextPasteboardChange = false
             return
         }
-        
+
         guard !isProcessing else { return }
         guard let text = PasteboardHelper.readString(), !text.isEmpty else { return }
-        
+
         let concealed = PasteboardHelper.isPasteboardConcealed()
-        
+
         isProcessing = true
         Task { @MainActor in
             await processNewClipboardText(text, isConcealed: concealed)
             isProcessing = false
         }
     }
-    
-    // MARK: - Smart processing pipeline
-    
+
+
     private func processNewClipboardText(_ raw: String, isConcealed: Bool) async {
         let source = raw
         let shouldCleanURLs = autoCleanURLs
         let shouldShield = autoClearSecrets
         let timeout = secretClearSeconds
-        
+
         let analysis = await Task.detached(priority: .userInitiated) { () -> (
             text: String,
             wasCleaned: Bool,
@@ -170,26 +160,26 @@ final class ClipboardViewModel: ObservableObject {
         ) in
             var working = source
             var wasCleaned = false
-            
+
             if shouldCleanURLs, let result = URLSanitizer.sanitize(source), result.didClean {
                 working = result.cleaned
                 wasCleaned = true
             }
-            
+
             let sensitive = PrivacyShield.detect(working)
             let kind = DevConverter.detectContentKind(working)
             return (working, wasCleaned, sensitive, kind)
         }.value
-        
+
         var contentKind = analysis.kind
-        
+
         if analysis.wasCleaned {
             writeInternally(analysis.text)
             contentKind = .url
         } else if shouldCleanURLs, URLSanitizer.sanitize(source) != nil {
             contentKind = .url
         }
-        
+
         switch analysis.kind {
         case .jwtToken, .curlCommand, .unixTimestamp, .json, .hexColor:
             contentKind = analysis.kind
@@ -198,8 +188,8 @@ final class ClipboardViewModel: ObservableObject {
         case .url, .plain:
             break
         }
-        
-        // Hassas veri: regex (shield açıksa) VEYA password-manager ConcealedType
+
+
         var sensitiveKind: SensitiveKind? = shouldShield ? analysis.sensitive : nil
         if case .jwtToken = contentKind, shouldShield, sensitiveKind == nil {
             sensitiveKind = .jwt
@@ -207,12 +197,12 @@ final class ClipboardViewModel: ObservableObject {
         if isConcealed {
             sensitiveKind = sensitiveKind ?? .passwordManager
         }
-        
+
         let isSensitive = sensitiveKind != nil
         let expiresAt: Date? = isSensitive
             ? Date().addingTimeInterval(TimeInterval(timeout))
             : nil
-        
+
         addItem(
             text: analysis.text,
             wasURLCleaned: analysis.wasCleaned,
@@ -222,13 +212,13 @@ final class ClipboardViewModel: ObservableObject {
             contentKind: contentKind
         )
     }
-    
+
     private func writeInternally(_ text: String) {
         ignoreNextPasteboardChange = true
         PasteboardHelper.writeString(text)
         lastChangeCount = PasteboardHelper.getChangeCount()
     }
-    
+
     private func addItem(
         text: String,
         wasURLCleaned: Bool,
@@ -252,7 +242,7 @@ final class ClipboardViewModel: ObservableObject {
             enforceLimitsAndPersist()
             return
         }
-        
+
         let newItem = ClipboardItem(
             text: text,
             wasURLCleaned: wasURLCleaned,
@@ -261,23 +251,23 @@ final class ClipboardViewModel: ObservableObject {
             expiresAt: expiresAt,
             contentKind: contentKind
         )
-        
+
         insertSorted(newItem)
         enforceLimitsAndPersist()
     }
-    
-    /// Başa ekle, sonra pinlileri üste taşı
+
+
     private func insertSorted(_ item: ClipboardItem) {
         items.insert(item, at: 0)
         reorderPinnedFirst()
     }
-    
+
     private func reorderPinnedFirst() {
         let pinned = items.filter(\.isPinned)
         let unpinned = items.filter { !$0.isPinned }
         items = pinned + unpinned
     }
-    
+
     private func enforceLimitsAndPersist() {
         reorderPinnedFirst()
         let pinned = items.filter(\.isPinned)
@@ -288,9 +278,8 @@ final class ClipboardViewModel: ObservableObject {
         items = pinned + unpinned
         persistHistory()
     }
-    
-    // MARK: - Secret expiry
-    
+
+
     private func purgeExpiredSecrets() {
         let now = Date()
         let expired = items.filter { item in
@@ -298,34 +287,33 @@ final class ClipboardViewModel: ObservableObject {
             return expiresAt <= now
         }
         guard !expired.isEmpty else { return }
-        
+
         let expiredIds = Set(expired.map(\.id))
         let expiredTexts = Set(expired.map(\.text))
         items.removeAll { expiredIds.contains($0.id) }
-        
+
         if let current = PasteboardHelper.readString(), expiredTexts.contains(current) {
             ignoreNextPasteboardChange = true
             PasteboardHelper.clear()
             lastChangeCount = PasteboardHelper.getChangeCount()
         }
-        
+
         persistHistory()
     }
-    
-    // MARK: - User actions
-    
+
+
     func copyToPasteboard(_ item: ClipboardItem) {
         writeInternally(item.text)
         markCopied(item.id)
     }
-    
+
     func copyText(_ text: String, feedbackFor itemId: UUID? = nil) {
         writeInternally(text)
         if let itemId {
             markCopied(itemId)
         }
     }
-    
+
     private func markCopied(_ id: UUID) {
         lastCopiedItemId = id
         copiedResetTask?.cancel()
@@ -337,24 +325,24 @@ final class ClipboardViewModel: ObservableObject {
             }
         }
     }
-    
+
     func toggleReveal(for item: ClipboardItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].isRevealed.toggle()
     }
-    
+
     func togglePin(for item: ClipboardItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].isPinned.toggle()
         enforceLimitsAndPersist()
     }
-    
-    /// Sadece pinlenmemiş öğeleri siler
+
+
     func clearHistory() {
         items.removeAll { !$0.isPinned }
         persistHistory()
     }
-    
+
     func removeItem(_ item: ClipboardItem) {
         items.removeAll { $0.id == item.id }
         if PasteboardHelper.readString() == item.text {
@@ -364,58 +352,57 @@ final class ClipboardViewModel: ObservableObject {
         }
         persistHistory()
     }
-    
-    // MARK: - Dev converter actions
-    
+
+
     func copySwiftStruct(from item: ClipboardItem) {
         Task {
             let code = await Task.detached { DevConverter.toSwiftStruct(item.text) }.value
             if let code { copyText(code, feedbackFor: item.id) }
         }
     }
-    
+
     func copyTypeScript(from item: ClipboardItem) {
         Task {
             let code = await Task.detached { DevConverter.toTypeScriptInterface(item.text) }.value
             if let code { copyText(code, feedbackFor: item.id) }
         }
     }
-    
+
     func copyCSharp(from item: ClipboardItem) {
         Task {
             let code = await Task.detached { DevConverter.toCSharpClass(item.text) }.value
             if let code { copyText(code, feedbackFor: item.id) }
         }
     }
-    
+
     func formatJSON(from item: ClipboardItem) {
         Task {
             let pretty = await Task.detached { DevConverter.prettyJSON(item.text) }.value
             if let pretty { copyText(pretty, feedbackFor: item.id) }
         }
     }
-    
+
     func minifyJSON(from item: ClipboardItem) {
         Task {
             let mini = await Task.detached { DevConverter.minifyJSON(item.text) }.value
             if let mini { copyText(mini, feedbackFor: item.id) }
         }
     }
-    
+
     func decodeBase64(from item: ClipboardItem) {
         Task {
             let decoded = await Task.detached { DevConverter.decodeBase64(item.text) }.value
             if let decoded { copyText(decoded, feedbackFor: item.id) }
         }
     }
-    
+
     func decodeURL(from item: ClipboardItem) {
         Task {
             let decoded = await Task.detached { DevConverter.decodeURLEncoded(item.text) }.value
             if let decoded { copyText(decoded, feedbackFor: item.id) }
         }
     }
-    
+
     func copyJWTPayload(from item: ClipboardItem) {
         Task {
             let payload = await Task.detached { () -> String? in
@@ -427,50 +414,49 @@ final class ClipboardViewModel: ObservableObject {
             if let payload { copyText(payload, feedbackFor: item.id) }
         }
     }
-    
+
     func copyCurlAsSwift(from item: ClipboardItem) {
         Task {
             let code = await Task.detached { DevConverter.curlToSwiftURLRequest(item.text) }.value
             if let code { copyText(code, feedbackFor: item.id) }
         }
     }
-    
+
     func copyCurlAsJSFetch(from item: ClipboardItem) {
         Task {
             let code = await Task.detached { DevConverter.curlToJSFetch(item.text) }.value
             if let code { copyText(code, feedbackFor: item.id) }
         }
     }
-    
+
     func copyTimestampISO(from item: ClipboardItem) {
         Task {
             let iso = await Task.detached { DevConverter.unixTimestampToISO8601(item.text) }.value
             if let iso { copyText(iso, feedbackFor: item.id) }
         }
     }
-    
+
     func copyCamelCase(from item: ClipboardItem) {
         copyText(DevConverter.toCamelCase(item.text), feedbackFor: item.id)
     }
-    
+
     func copySnakeCase(from item: ClipboardItem) {
         copyText(DevConverter.toSnakeCase(item.text), feedbackFor: item.id)
     }
-    
+
     func copyKebabCase(from item: ClipboardItem) {
         copyText(DevConverter.toKebabCase(item.text), feedbackFor: item.id)
     }
-    
+
     func copyUpperSnakeCase(from item: ClipboardItem) {
         copyText(DevConverter.toUpperSnakeCase(item.text), feedbackFor: item.id)
     }
-    
+
     func quit() {
         NSApplication.shared.terminate(nil)
     }
-    
-    // MARK: - Persistence (non-sensitive only)
-    
+
+
     private var historyFileURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("ClipboardManager", isDirectory: true)
@@ -479,9 +465,9 @@ final class ClipboardViewModel: ObservableObject {
         }
         return dir.appendingPathComponent("clipboard_history.json")
     }
-    
+
     private func persistHistory() {
-        // KURAL: isSensitive == true asla diske yazılmaz
+
         let safeItems = items.filter { !$0.isSensitive }
         do {
             let data = try JSONEncoder().encode(safeItems)
@@ -490,30 +476,29 @@ final class ClipboardViewModel: ObservableObject {
             print("Geçmiş kaydedilemedi: \(error.localizedDescription)")
         }
     }
-    
+
     private func loadPersistedHistory() {
         let url = historyFileURL
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             let data = try Data(contentsOf: url)
             let loaded = try JSONDecoder().decode([ClipboardItem].self, from: data)
-            // Diskten gelenler zaten non-sensitive olmalı; yine de filtrele
+
             items = loaded.filter { !$0.isSensitive }
             reorderPinnedFirst()
         } catch {
             print("Geçmiş yüklenemedi: \(error.localizedDescription)")
         }
     }
-    
-    // MARK: - Launch at Login
-    
+
+
     private func isLaunchAtLoginEnabled() -> Bool {
         if #available(macOS 13.0, *) {
             return SMAppService.mainApp.status == .enabled
         }
         return false
     }
-    
+
     func toggleLaunchAtLogin() {
         if #available(macOS 13.0, *) {
             let service = SMAppService.mainApp

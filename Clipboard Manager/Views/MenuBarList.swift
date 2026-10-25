@@ -1,21 +1,14 @@
-//
-//  MenuBarList.swift
-//  ClipHistory
-//
-//  Created by Onur Akyüz on 25.12.2025.
-//
-
 import SwiftUI
 import AppKit
 
-/// Menü çubuğunda gösterilecek ana liste görünümü
+
 struct MenuBarList: View {
     @ObservedObject var viewModel: ClipboardViewModel
     @State private var showSmartRules = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Başlık
+
             HStack {
                 Text(LocalizationHelper.Strings.title)
                     .font(.headline)
@@ -25,8 +18,8 @@ struct MenuBarList: View {
             .padding(.top, 10)
             .padding(.bottom, 6)
             .background(Color(NSColor.controlBackgroundColor))
-            
-            // Arama
+
+
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
@@ -51,8 +44,8 @@ struct MenuBarList: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
-            
-            // Filtre hapları
+
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(HistoryFilter.allCases) { filter in
@@ -67,10 +60,10 @@ struct MenuBarList: View {
                 .padding(.horizontal, 12)
             }
             .padding(.bottom, 8)
-            
+
             Divider()
-            
-            // Liste
+
+
             let visible = viewModel.filteredItems
             if visible.isEmpty {
                 VStack(spacing: 8) {
@@ -95,9 +88,9 @@ struct MenuBarList: View {
                 }
                 .frame(maxHeight: 420)
             }
-            
+
             Divider()
-            
+
             VStack(spacing: 0) {
                 Button {
                     viewModel.clearHistory()
@@ -112,9 +105,9 @@ struct MenuBarList: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.items.filter { !$0.isPinned }.isEmpty)
-                
+
                 Divider()
-                
+
                 DisclosureGroup(isExpanded: $showSmartRules) {
                     SmartRulesPanel(viewModel: viewModel)
                         .padding(.horizontal, 8)
@@ -130,9 +123,9 @@ struct MenuBarList: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                
+
                 Divider()
-                
+
                 Button {
                     viewModel.toggleLaunchAtLogin()
                 } label: {
@@ -146,9 +139,9 @@ struct MenuBarList: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
-                
+
                 Divider()
-                
+
                 Button {
                     viewModel.quit()
                 } label: {
@@ -168,13 +161,12 @@ struct MenuBarList: View {
     }
 }
 
-// MARK: - Filter pill
 
 struct FilterPill: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -193,14 +185,13 @@ struct FilterPill: View {
     }
 }
 
-// MARK: - Smart Rules
 
 struct SmartRulesPanel: View {
     @ObservedObject var viewModel: ClipboardViewModel
-    
+
     private let timeoutOptions = [30, 60, 120, 300]
     private let maxOptions = [15, 30, 50]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: $viewModel.autoCleanURLs) {
@@ -208,13 +199,13 @@ struct SmartRulesPanel: View {
                     .font(.system(size: 12))
             }
             .toggleStyle(.checkbox)
-            
+
             Toggle(isOn: $viewModel.autoClearSecrets) {
                 Text(LocalizationHelper.Strings.autoClearSecrets)
                     .font(.system(size: 12))
             }
             .toggleStyle(.checkbox)
-            
+
             if viewModel.autoClearSecrets {
                 HStack {
                     Text(LocalizationHelper.Strings.secretTimeout)
@@ -231,13 +222,13 @@ struct SmartRulesPanel: View {
                 }
                 .padding(.leading, 20)
             }
-            
+
             Toggle(isOn: $viewModel.showDevTools) {
                 Text(LocalizationHelper.Strings.showDevTools)
                     .font(.system(size: 12))
             }
             .toggleStyle(.checkbox)
-            
+
             HStack {
                 Text(LocalizationHelper.Strings.maxHistory)
                     .font(.system(size: 12))
@@ -255,17 +246,16 @@ struct SmartRulesPanel: View {
     }
 }
 
-// MARK: - Item row
 
 struct ClipboardItemRow: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
     @State private var isHovered = false
-    
+
     private var justCopied: Bool {
         viewModel.lastCopiedItemId == item.id
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
@@ -284,33 +274,33 @@ struct ClipboardItemRow: View {
                                     .foregroundColor(.orange)
                                     .padding(.top, 3)
                             }
-                            
+
                             contentLeadingIcon
-                            
+
                             Text(item.displayText)
                                 .font(.system(size: 13, design: item.isSensitive && !item.isRevealed ? .monospaced : .default))
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
                                 .foregroundColor(.primary)
-                            
+
                             Spacer(minLength: 0)
                         }
-                        
-                        // Timestamp / JWT preview
+
+
                         secondaryPreview
-                        
+
                         HStack(spacing: 6) {
                             if justCopied {
                                 BadgeView(text: LocalizationHelper.Strings.copiedBadge, color: .green)
                                     .transition(.opacity.combined(with: .scale))
                             }
-                            
+
                             if item.wasURLCleaned {
                                 BadgeView(text: LocalizationHelper.Strings.cleanedBadge, color: .green)
                             }
-                            
+
                             contentBadge
-                            
+
                             if item.isSensitive, let expiresAt = item.expiresAt {
                                 TimelineView(.periodic(from: .now, by: 1)) { context in
                                     let remaining = max(0, Int(expiresAt.timeIntervalSince(context.date)))
@@ -320,7 +310,7 @@ struct ClipboardItemRow: View {
                                     )
                                 }
                             }
-                            
+
                             Text(formatDate(item.date))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
@@ -330,8 +320,8 @@ struct ClipboardItemRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                
-                // Hover aksiyonları
+
+
                 if isHovered || item.isSensitive {
                     HStack(spacing: 4) {
                         if item.isSensitive {
@@ -342,7 +332,7 @@ struct ClipboardItemRow: View {
                                 viewModel.toggleReveal(for: item)
                             }
                         }
-                        
+
                         if isHovered {
                             IconActionButton(
                                 systemName: item.isPinned ? "pin.slash" : "pin.fill",
@@ -350,11 +340,11 @@ struct ClipboardItemRow: View {
                             ) {
                                 viewModel.togglePin(for: item)
                             }
-                            
+
                             IconActionButton(systemName: "doc.on.doc", help: LocalizationHelper.Strings.copy) {
                                 viewModel.copyToPasteboard(item)
                             }
-                            
+
                             IconActionButton(systemName: "trash", help: LocalizationHelper.Strings.delete) {
                                 viewModel.removeItem(item)
                             }
@@ -363,7 +353,7 @@ struct ClipboardItemRow: View {
                     .padding(.top, 1)
                 }
             }
-            
+
             if viewModel.showDevTools {
                 DevActionsBar(item: item, viewModel: viewModel)
             }
@@ -374,10 +364,10 @@ struct ClipboardItemRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        
+
         Divider()
     }
-    
+
     @ViewBuilder
     private var contentLeadingIcon: some View {
         if case .hexColor(let hex) = item.contentKind,
@@ -389,7 +379,7 @@ struct ClipboardItemRow: View {
                 .padding(.top, 2)
         }
     }
-    
+
     @ViewBuilder
     private var secondaryPreview: some View {
         switch item.contentKind {
@@ -407,7 +397,7 @@ struct ClipboardItemRow: View {
             EmptyView()
         }
     }
-    
+
     @ViewBuilder
     private var contentBadge: some View {
         switch item.contentKind {
@@ -423,13 +413,13 @@ struct ClipboardItemRow: View {
             EmptyView()
         }
     }
-    
+
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         formatter.locale = LocalizationHelper.isTurkish ? Locale(identifier: "tr_TR") : Locale.current
-        
+
         if Calendar.current.isDateInToday(date) {
             return formatter.string(from: date)
         }
@@ -442,7 +432,7 @@ struct IconActionButton: View {
     let systemName: String
     let help: String
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
@@ -456,12 +446,11 @@ struct IconActionButton: View {
     }
 }
 
-// MARK: - Dev actions
 
 struct DevActionsBar: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
-    
+
     var body: some View {
         Group {
             switch item.contentKind {
@@ -509,7 +498,7 @@ struct DevActionsBar: View {
                     viewModel.decodeURL(from: item)
                 }
             case .plain, .url, .hexColor:
-                // Case converter — kısa/orta metinler için
+
                 if item.text.count <= 120, item.text.contains(where: { $0.isLetter }) {
                     actionScroll {
                         DevActionButton(title: LocalizationHelper.Strings.camelCase) {
@@ -529,7 +518,7 @@ struct DevActionsBar: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func actionScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -543,7 +532,7 @@ struct DevActionsBar: View {
 struct DevActionButton: View {
     let title: String
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -561,7 +550,7 @@ struct DevActionButton: View {
 struct BadgeView: View {
     let text: String
     let color: Color
-    
+
     var body: some View {
         Text(text)
             .font(.system(size: 9, weight: .semibold))
