@@ -23,6 +23,11 @@
 - ✅ Dock'ta görünmez (sadece menü çubuğunda)
 - ✅ Otomatik dil algılama (Türkçe/İngilizce)
 - ✅ Otomatik başlatma özelliği (bilgisayar açıldığında otomatik başlatma)
+- ✅ **v2.0** Otomatik URL tracking temizleme (`utm_*`, `fbclid`, `gclid` …)
+- ✅ **v2.0** Hassas veri kalkanı (JWT, API key, `.env`, kart) — maskeleme + otomatik silme
+- ✅ **v2.0** Geliştirici araçları: JSON → Swift / TypeScript / C#, Format/Minify, Base64/URL Decode, HEX önizleme
+- ✅ **v2.0** Akıllı Kurallar paneli (toggle'lar, silme süresi)
+- ✅ Mac App Store Sandbox uyumlu
 
 ## Gereksinimler
 
@@ -80,14 +85,17 @@ Bu özellik macOS'un Login Items sistemini kullanır ve Sistem Ayarları > Kulla
 Clipboard Manager/
 ├── Clipboard_ManagerApp.swift       # Ana uygulama entry point
 ├── Models/
-│   └── ClipboardItem.swift          # Veri modeli
+│   └── ClipboardItem.swift          # Veri modeli + smart metadata
 ├── ViewModels/
-│   └── ClipboardViewModel.swift     # İş mantığı (MVVM)
+│   └── ClipboardViewModel.swift     # İş mantığı (MVVM) + smart pipeline
 ├── Views/
-│   └── MenuBarList.swift            # Ana UI görünümü
+│   └── MenuBarList.swift            # Ana UI + Akıllı Kurallar
 ├── Helpers/
 │   ├── PasteboardHelper.swift       # NSPasteboard yardımcı sınıfı
-│   └── LocalizationHelper.swift     # Çoklu dil desteği
+│   ├── LocalizationHelper.swift     # Çoklu dil desteği
+│   ├── URLSanitizer.swift           # Tracking URL temizleyici
+│   ├── PrivacyShield.swift          # Hassas veri tespiti
+│   └── DevConverter.swift           # JSON / Base64 / HEX araçları
 └── Config/
     └── Info.plist                   # LSUIElement ayarı
 ```

@@ -8,13 +8,13 @@
 import AppKit
 
 /// NSPasteboard işlemleri için yardımcı sınıf
-class PasteboardHelper {
+enum PasteboardHelper {
     private static let pasteboard = NSPasteboard.general
     
     /// Panodan metin okur
     /// - Returns: Panodaki metin, yoksa nil
     static func readString() -> String? {
-        return pasteboard.string(forType: .string)
+        pasteboard.string(forType: .string)
     }
     
     /// Metni panoya yazar
@@ -24,10 +24,14 @@ class PasteboardHelper {
         pasteboard.setString(text, forType: .string)
     }
     
+    /// Sistem panosunu temizler
+    static func clear() {
+        pasteboard.clearContents()
+    }
+    
     /// Panonun değişim sayacını döndürür (değişiklik kontrolü için)
     /// - Returns: Panonun changeCount değeri
     static func getChangeCount() -> Int {
-        return pasteboard.changeCount
+        pasteboard.changeCount
     }
 }
-
