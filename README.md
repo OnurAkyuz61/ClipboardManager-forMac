@@ -27,7 +27,9 @@
 - ✅ **v2.0** Hassas veri kalkanı (JWT, API key, `.env`, kart) — maskeleme + otomatik silme
 - ✅ **v2.0** Geliştirici araçları: JSON → Swift / TypeScript / C#, Format/Minify, Base64/URL Decode, HEX önizleme
 - ✅ **v2.0** Akıllı Kurallar paneli (toggle'lar, silme süresi)
-- ✅ Mac App Store Sandbox uyumlu
+- ✅ **v2.1** Pinleme, arama/filtre, güvenli JSON persistence (secret’lar asla diske yazılmaz)
+- ✅ **v2.1** Password manager ConcealedType, JWT/cURL/Epoch/Case converter, hover aksiyonları
+- ✅ Mac App Store Sandbox uyumlu · macOS 13.0+
 
 ## Gereksinimler
 

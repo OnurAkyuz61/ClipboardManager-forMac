@@ -16,6 +16,15 @@ enum DevConverter {
     nonisolated static func detectContentKind(_ text: String) -> ClipboardContentKind {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         
+        if let jwt = decodeJWT(trimmed) {
+            return .jwtToken(header: jwt.header, payload: jwt.payload)
+        }
+        if looksLikeCurl(trimmed) {
+            return .curlCommand
+        }
+        if let dateString = formatUnixTimestamp(trimmed) {
+            return .unixTimestamp(dateString: dateString)
+        }
         if isValidJSON(trimmed) {
             return .json
         }
@@ -32,6 +41,291 @@ enum DevConverter {
             return .urlEncoded
         }
         return .plain
+    }
+    
+    // MARK: - JWT
+    
+    nonisolated static func looksLikeJWT(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: ".")
+        guard parts.count == 3, trimmed.hasPrefix("eyJ") else { return false }
+        return decodeBase64URL(String(parts[0])) != nil && decodeBase64URL(String(parts[1])) != nil
+    }
+    
+    /// Header + Payload'ı Base64URL decode edip (mümkünse) pretty JSON döner
+    nonisolated static func decodeJWT(_ text: String) -> (header: String, payload: String)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard looksLikeJWT(trimmed) else { return nil }
+        let parts = trimmed.split(separator: ".")
+        guard parts.count >= 2,
+              let headerRaw = decodeBase64URL(String(parts[0])),
+              let payloadRaw = decodeBase64URL(String(parts[1]))
+        else { return nil }
+        return (
+            prettyJSON(headerRaw) ?? headerRaw,
+            prettyJSON(payloadRaw) ?? payloadRaw
+        )
+    }
+    
+    nonisolated static func decodeBase64URL(_ input: String) -> String? {
+        var base64 = input
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder > 0 {
+            base64.append(String(repeating: "=", count: 4 - remainder))
+        }
+        guard let data = Data(base64Encoded: base64),
+              let str = String(data: data, encoding: .utf8)
+        else { return nil }
+        return str
+    }
+    
+    // MARK: - cURL
+    
+    nonisolated static func looksLikeCurl(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.lowercased().hasPrefix("curl ")
+    }
+    
+    nonisolated struct CurlRequest: Sendable {
+        var method: String
+        var url: String
+        var headers: [(String, String)]
+        var body: String?
+    }
+    
+    nonisolated static func parseCurl(_ text: String) -> CurlRequest? {
+        guard looksLikeCurl(text) else { return nil }
+        let tokens = tokenizeShell(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !tokens.isEmpty else { return nil }
+        
+        var method = "GET"
+        var url = ""
+        var headers: [(String, String)] = []
+        var body: String?
+        var i = 0
+        
+        while i < tokens.count {
+            let t = tokens[i]
+            if t == "curl" {
+                i += 1
+                continue
+            }
+            if t == "-X" || t == "--request", i + 1 < tokens.count {
+                method = tokens[i + 1].uppercased()
+                i += 2
+                continue
+            }
+            if t == "-H" || t == "--header", i + 1 < tokens.count {
+                let header = tokens[i + 1]
+                if let colon = header.firstIndex(of: ":") {
+                    let name = String(header[..<colon]).trimmingCharacters(in: .whitespaces)
+                    let value = String(header[header.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    headers.append((name, value))
+                }
+                i += 2
+                continue
+            }
+            if t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary", i + 1 < tokens.count {
+                body = tokens[i + 1]
+                if method == "GET" { method = "POST" }
+                i += 2
+                continue
+            }
+            if t.hasPrefix("http://") || t.hasPrefix("https://") {
+                url = t
+                i += 1
+                continue
+            }
+            // `-XPOST` gibi birleşik bayraklar
+            if t.hasPrefix("-X"), t.count > 2 {
+                method = String(t.dropFirst(2)).uppercased()
+                i += 1
+                continue
+            }
+            i += 1
+        }
+        
+        guard !url.isEmpty else { return nil }
+        return CurlRequest(method: method, url: url, headers: headers, body: body)
+    }
+    
+    nonisolated static func curlToSwiftURLRequest(_ text: String) -> String? {
+        guard let req = parseCurl(text) else { return nil }
+        var lines: [String] = []
+        lines.append("var request = URLRequest(url: URL(string: \"\(escapeSwift(req.url))\")!)")
+        lines.append("request.httpMethod = \"\(req.method)\"")
+        for (name, value) in req.headers {
+            lines.append("request.setValue(\"\(escapeSwift(value))\", forHTTPHeaderField: \"\(escapeSwift(name))\")")
+        }
+        if let body = req.body {
+            lines.append("request.httpBody = \"\"\"")
+            lines.append(body)
+            lines.append("\"\"\".data(using: .utf8)")
+        }
+        return lines.joined(separator: "\n")
+    }
+    
+    nonisolated static func curlToJSFetch(_ text: String) -> String? {
+        guard let req = parseCurl(text) else { return nil }
+        var headerLines = req.headers.map { "    \"\(escapeJS($0.0))\": \"\(escapeJS($0.1))\"" }.joined(separator: ",\n")
+        if headerLines.isEmpty { headerLines = "" }
+        
+        var opts: [String] = ["  method: \"\(req.method)\""]
+        if !req.headers.isEmpty {
+            opts.append("  headers: {\n\(headerLines)\n  }")
+        }
+        if let body = req.body {
+            opts.append("  body: \(jsStringLiteral(body))")
+        }
+        
+        return "fetch(\"\(escapeJS(req.url))\", {\n\(opts.joined(separator: ",\n"))\n});"
+    }
+    
+    // MARK: - Unix timestamp
+    
+    nonisolated static func formatUnixTimestamp(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int64(trimmed) else { return nil }
+        let digits = trimmed.count
+        guard digits == 10 || digits == 13 else { return nil }
+        
+        let seconds: TimeInterval
+        if digits == 13 {
+            seconds = TimeInterval(value) / 1000.0
+        } else {
+            seconds = TimeInterval(value)
+        }
+        
+        // Makul aralık: ~2001 … ~2100
+        guard seconds > 1_000_000_000, seconds < 4_102_444_800 else { return nil }
+        
+        let date = Date(timeIntervalSince1970: seconds)
+        let local = DateFormatter()
+        local.dateStyle = .medium
+        local.timeStyle = .medium
+        local.timeZone = .current
+        
+        let utc = DateFormatter()
+        utc.dateStyle = .medium
+        utc.timeStyle = .medium
+        utc.timeZone = TimeZone(secondsFromGMT: 0)
+        utc.locale = Locale(identifier: "en_US_POSIX")
+        
+        return "\(local.string(from: date))  |  UTC \(utc.string(from: date))"
+    }
+    
+    nonisolated static func unixTimestampToISO8601(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int64(trimmed) else { return nil }
+        let digits = trimmed.count
+        guard digits == 10 || digits == 13 else { return nil }
+        let seconds: TimeInterval = digits == 13 ? TimeInterval(value) / 1000.0 : TimeInterval(value)
+        guard seconds > 1_000_000_000, seconds < 4_102_444_800 else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = Date(timeIntervalSince1970: seconds)
+        let result = formatter.string(from: date)
+        if result.isEmpty {
+            let fallback = ISO8601DateFormatter()
+            fallback.formatOptions = [.withInternetDateTime]
+            return fallback.string(from: date)
+        }
+        return result
+    }
+    
+    // MARK: - Case converters
+    
+    nonisolated static func toCamelCase(_ text: String) -> String {
+        let words = splitWords(text)
+        guard let first = words.first else { return text }
+        return first.lowercased() + words.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }.joined()
+    }
+    
+    nonisolated static func toSnakeCase(_ text: String) -> String {
+        splitWords(text).map { $0.lowercased() }.joined(separator: "_")
+    }
+    
+    nonisolated static func toKebabCase(_ text: String) -> String {
+        splitWords(text).map { $0.lowercased() }.joined(separator: "-")
+    }
+    
+    nonisolated static func toUpperSnakeCase(_ text: String) -> String {
+        splitWords(text).map { $0.uppercased() }.joined(separator: "_")
+    }
+    
+    nonisolated private static func splitWords(_ text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // camelCase / PascalCase ayrıştır
+        var spaced = ""
+        for (i, ch) in trimmed.enumerated() {
+            if ch.isUppercase, i > 0 {
+                spaced.append(" ")
+            }
+            if ch == "_" || ch == "-" || ch == " " || ch == "." {
+                spaced.append(" ")
+            } else {
+                spaced.append(ch)
+            }
+        }
+        return spaced.split(whereSeparator: { $0.isWhitespace }).map(String.init).filter { !$0.isEmpty }
+    }
+    
+    nonisolated private static func tokenizeShell(_ input: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaped = false
+        
+        for ch in input {
+            if escaped {
+                current.append(ch)
+                escaped = false
+                continue
+            }
+            if ch == "\\" {
+                escaped = true
+                continue
+            }
+            if let q = quote {
+                if ch == q {
+                    quote = nil
+                } else {
+                    current.append(ch)
+                }
+                continue
+            }
+            if ch == "\"" || ch == "'" {
+                quote = ch
+                continue
+            }
+            if ch.isWhitespace {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current = ""
+                }
+                continue
+            }
+            current.append(ch)
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
+    }
+    
+    nonisolated private static func escapeSwift(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+    
+    nonisolated private static func escapeJS(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+    
+    nonisolated private static func jsStringLiteral(_ s: String) -> String {
+        "\"\(escapeJS(s))\""
     }
     
     // MARK: - JSON

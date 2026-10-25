@@ -8,25 +8,40 @@
 import Foundation
 
 /// Hassas veri türü
-enum SensitiveKind: String, Equatable, Sendable {
+enum SensitiveKind: String, Equatable, Sendable, Codable {
     case jwt
     case apiKey
     case envFile
     case creditCard
+    case passwordManager
 }
 
 /// Panodaki içeriğin algılanan türü
-enum ClipboardContentKind: Equatable, Sendable {
+enum ClipboardContentKind: Equatable, Sendable, Codable {
     case plain
     case url
     case json
     case base64
     case urlEncoded
     case hexColor(hex: String)
+    case jwtToken(header: String, payload: String)
+    case curlCommand
+    case unixTimestamp(dateString: String)
+}
+
+/// Geçmiş filtreleri
+enum HistoryFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case pinned
+    case links
+    case dev
+    case secrets
+    
+    var id: String { rawValue }
 }
 
 /// Panodan kopyalanan bir metin öğesini temsil eden model
-struct ClipboardItem: Identifiable, Equatable {
+struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     let text: String
     let date: Date
@@ -36,30 +51,30 @@ struct ClipboardItem: Identifiable, Equatable {
     var expiresAt: Date?
     var contentKind: ClipboardContentKind
     var isRevealed: Bool
+    var isPinned: Bool
     
     init(
+        id: UUID = UUID(),
         text: String,
+        date: Date = Date(),
         wasURLCleaned: Bool = false,
         isSensitive: Bool = false,
         sensitiveKind: SensitiveKind? = nil,
         expiresAt: Date? = nil,
         contentKind: ClipboardContentKind = .plain,
-        isRevealed: Bool = false
+        isRevealed: Bool = false,
+        isPinned: Bool = false
     ) {
-        self.id = UUID()
+        self.id = id
         self.text = text
-        self.date = Date()
+        self.date = date
         self.wasURLCleaned = wasURLCleaned
         self.isSensitive = isSensitive
         self.sensitiveKind = sensitiveKind
         self.expiresAt = expiresAt
         self.contentKind = contentKind
         self.isRevealed = isRevealed
-    }
-    
-    /// Aynı metin içeriğine sahip olup olmadığını kontrol eder
-    static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
-        lhs.text == rhs.text
+        self.isPinned = isPinned
     }
     
     /// UI'da gösterilecek metin (hassas ise maskeli)
@@ -68,5 +83,20 @@ struct ClipboardItem: Identifiable, Equatable {
             return String(repeating: "•", count: min(max(text.count, 8), 24))
         }
         return text
+    }
+    
+    /// Geliştirici / dönüştürülebilir içerik mi?
+    var isDevContent: Bool {
+        switch contentKind {
+        case .json, .base64, .urlEncoded, .hexColor, .jwtToken, .curlCommand, .unixTimestamp:
+            return true
+        case .url, .plain:
+            return false
+        }
+    }
+    
+    var isLinkContent: Bool {
+        if case .url = contentKind { return true }
+        return wasURLCleaned
     }
 }

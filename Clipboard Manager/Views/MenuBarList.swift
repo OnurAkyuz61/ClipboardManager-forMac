@@ -19,30 +19,76 @@ struct MenuBarList: View {
             HStack {
                 Text(LocalizationHelper.Strings.title)
                     .font(.headline)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
                 Spacer()
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
             .background(Color(NSColor.controlBackgroundColor))
+            
+            // Arama
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                TextField(LocalizationHelper.Strings.searchPlaceholder, text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                if !viewModel.searchText.isEmpty {
+                    Button {
+                        viewModel.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(NSColor.textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            
+            // Filtre hapları
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(HistoryFilter.allCases) { filter in
+                        FilterPill(
+                            title: LocalizationHelper.Strings.filterTitle(filter),
+                            isSelected: viewModel.selectedFilter == filter
+                        ) {
+                            viewModel.selectedFilter = filter
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .padding(.bottom, 8)
             
             Divider()
             
             // Liste
-            if viewModel.items.isEmpty {
+            let visible = viewModel.filteredItems
+            if visible.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 32))
+                    Image(systemName: viewModel.items.isEmpty ? "doc.on.clipboard" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 28))
                         .foregroundColor(.secondary)
-                    Text(LocalizationHelper.Strings.emptyState)
+                    Text(viewModel.items.isEmpty
+                         ? LocalizationHelper.Strings.emptyState
+                         : LocalizationHelper.Strings.emptyFilter)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
+                .padding(.vertical, 36)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(viewModel.items) { item in
+                        ForEach(visible) { item in
                             ClipboardItemRow(item: item, viewModel: viewModel)
                         }
                     }
@@ -52,7 +98,6 @@ struct MenuBarList: View {
             
             Divider()
             
-            // Alt butonlar + Smart Rules
             VStack(spacing: 0) {
                 Button {
                     viewModel.clearHistory()
@@ -66,11 +111,10 @@ struct MenuBarList: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
-                .disabled(viewModel.items.isEmpty)
+                .disabled(viewModel.items.filter { !$0.isPinned }.isEmpty)
                 
                 Divider()
                 
-                // Smart Rules
                 DisclosureGroup(isExpanded: $showSmartRules) {
                     SmartRulesPanel(viewModel: viewModel)
                         .padding(.horizontal, 8)
@@ -120,7 +164,32 @@ struct MenuBarList: View {
             }
             .background(Color(NSColor.controlBackgroundColor))
         }
-        .frame(width: 360)
+        .frame(width: 380)
+    }
+}
+
+// MARK: - Filter pill
+
+struct FilterPill: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(isSelected ? Color.accentColor.opacity(0.2) : Color(NSColor.controlBackgroundColor))
+                .foregroundColor(isSelected ? .accentColor : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.25), lineWidth: 1)
+                )
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -130,6 +199,7 @@ struct SmartRulesPanel: View {
     @ObservedObject var viewModel: ClipboardViewModel
     
     private let timeoutOptions = [30, 60, 120, 300]
+    private let maxOptions = [15, 30, 50]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -167,6 +237,19 @@ struct SmartRulesPanel: View {
                     .font(.system(size: 12))
             }
             .toggleStyle(.checkbox)
+            
+            HStack {
+                Text(LocalizationHelper.Strings.maxHistory)
+                    .font(.system(size: 12))
+                Spacer()
+                Picker("", selection: $viewModel.maxItems) {
+                    ForEach(maxOptions, id: \.self) { value in
+                        Text("\(value)").tag(value)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 70)
+            }
         }
         .padding(.top, 4)
     }
@@ -177,6 +260,11 @@ struct SmartRulesPanel: View {
 struct ClipboardItemRow: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
+    @State private var isHovered = false
+    
+    private var justCopied: Bool {
+        viewModel.lastCopiedItemId == item.id
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -190,14 +278,14 @@ struct ClipboardItemRow: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .top, spacing: 6) {
-                            if case .hexColor(let hex) = item.contentKind,
-                               let nsColor = DevConverter.nsColor(fromHex: hex) {
-                                Circle()
-                                    .fill(Color(nsColor))
-                                    .frame(width: 12, height: 12)
-                                    .overlay(Circle().stroke(Color.secondary.opacity(0.4), lineWidth: 0.5))
-                                    .padding(.top, 2)
+                            if item.isPinned {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.orange)
+                                    .padding(.top, 3)
                             }
+                            
+                            contentLeadingIcon
                             
                             Text(item.displayText)
                                 .font(.system(size: 13, design: item.isSensitive && !item.isRevealed ? .monospaced : .default))
@@ -208,14 +296,20 @@ struct ClipboardItemRow: View {
                             Spacer(minLength: 0)
                         }
                         
+                        // Timestamp / JWT preview
+                        secondaryPreview
+                        
                         HStack(spacing: 6) {
+                            if justCopied {
+                                BadgeView(text: LocalizationHelper.Strings.copiedBadge, color: .green)
+                                    .transition(.opacity.combined(with: .scale))
+                            }
+                            
                             if item.wasURLCleaned {
                                 BadgeView(text: LocalizationHelper.Strings.cleanedBadge, color: .green)
                             }
                             
-                            if case .json = item.contentKind {
-                                BadgeView(text: LocalizationHelper.Strings.jsonBadge, color: .orange)
-                            }
+                            contentBadge
                             
                             if item.isSensitive, let expiresAt = item.expiresAt {
                                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -231,35 +325,103 @@ struct ClipboardItemRow: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
+                        .animation(.easeInOut(duration: 0.2), value: justCopied)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 
-                if item.isSensitive {
-                    Button {
-                        viewModel.toggleReveal(for: item)
-                    } label: {
-                        Image(systemName: item.isRevealed ? "eye.slash" : "eye")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .padding(.top, 2)
+                // Hover aksiyonları
+                if isHovered || item.isSensitive {
+                    HStack(spacing: 4) {
+                        if item.isSensitive {
+                            IconActionButton(
+                                systemName: item.isRevealed ? "eye.slash" : "eye",
+                                help: item.isRevealed ? LocalizationHelper.Strings.hide : LocalizationHelper.Strings.reveal
+                            ) {
+                                viewModel.toggleReveal(for: item)
+                            }
+                        }
+                        
+                        if isHovered {
+                            IconActionButton(
+                                systemName: item.isPinned ? "pin.slash" : "pin.fill",
+                                help: item.isPinned ? LocalizationHelper.Strings.unpin : LocalizationHelper.Strings.pin
+                            ) {
+                                viewModel.togglePin(for: item)
+                            }
+                            
+                            IconActionButton(systemName: "doc.on.doc", help: LocalizationHelper.Strings.copy) {
+                                viewModel.copyToPasteboard(item)
+                            }
+                            
+                            IconActionButton(systemName: "trash", help: LocalizationHelper.Strings.delete) {
+                                viewModel.removeItem(item)
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .help(item.isRevealed ? LocalizationHelper.Strings.hide : LocalizationHelper.Strings.reveal)
+                    .padding(.top, 1)
                 }
             }
             
-            // Geliştirici aksiyonları
             if viewModel.showDevTools {
                 DevActionsBar(item: item, viewModel: viewModel)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(isHovered ? Color.accentColor.opacity(0.06) : Color(NSColor.controlBackgroundColor))
+        .onHover { hovering in
+            isHovered = hovering
+        }
         
         Divider()
+    }
+    
+    @ViewBuilder
+    private var contentLeadingIcon: some View {
+        if case .hexColor(let hex) = item.contentKind,
+           let nsColor = DevConverter.nsColor(fromHex: hex) {
+            Circle()
+                .fill(Color(nsColor))
+                .frame(width: 12, height: 12)
+                .overlay(Circle().stroke(Color.secondary.opacity(0.4), lineWidth: 0.5))
+                .padding(.top, 2)
+        }
+    }
+    
+    @ViewBuilder
+    private var secondaryPreview: some View {
+        switch item.contentKind {
+        case .unixTimestamp(let dateString):
+            Text(dateString)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        case .jwtToken(_, let payload):
+            Text(payload.replacingOccurrences(of: "\n", with: " "))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        default:
+            EmptyView()
+        }
+    }
+    
+    @ViewBuilder
+    private var contentBadge: some View {
+        switch item.contentKind {
+        case .json:
+            BadgeView(text: LocalizationHelper.Strings.jsonBadge, color: .orange)
+        case .jwtToken:
+            BadgeView(text: LocalizationHelper.Strings.jwtBadge, color: .purple)
+        case .curlCommand:
+            BadgeView(text: LocalizationHelper.Strings.curlBadge, color: .blue)
+        case .unixTimestamp:
+            BadgeView(text: "Epoch", color: Color(red: 0.0, green: 0.6, blue: 0.6))
+        default:
+            EmptyView()
+        }
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -268,12 +430,29 @@ struct ClipboardItemRow: View {
         formatter.timeStyle = .short
         formatter.locale = LocalizationHelper.isTurkish ? Locale(identifier: "tr_TR") : Locale.current
         
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
+        if Calendar.current.isDateInToday(date) {
             return formatter.string(from: date)
         }
         formatter.dateStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+struct IconActionButton: View {
+    let systemName: String
+    let help: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 
@@ -287,24 +466,39 @@ struct DevActionsBar: View {
         Group {
             switch item.contentKind {
             case .json:
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        DevActionButton(title: LocalizationHelper.Strings.copyAsSwift) {
-                            viewModel.copySwiftStruct(from: item)
-                        }
-                        DevActionButton(title: LocalizationHelper.Strings.copyAsTypeScript) {
-                            viewModel.copyTypeScript(from: item)
-                        }
-                        DevActionButton(title: LocalizationHelper.Strings.copyAsCSharp) {
-                            viewModel.copyCSharp(from: item)
-                        }
-                        DevActionButton(title: LocalizationHelper.Strings.formatJSON) {
-                            viewModel.formatJSON(from: item)
-                        }
-                        DevActionButton(title: LocalizationHelper.Strings.minifyJSON) {
-                            viewModel.minifyJSON(from: item)
-                        }
+                actionScroll {
+                    DevActionButton(title: LocalizationHelper.Strings.copyAsSwift) {
+                        viewModel.copySwiftStruct(from: item)
                     }
+                    DevActionButton(title: LocalizationHelper.Strings.copyAsTypeScript) {
+                        viewModel.copyTypeScript(from: item)
+                    }
+                    DevActionButton(title: LocalizationHelper.Strings.copyAsCSharp) {
+                        viewModel.copyCSharp(from: item)
+                    }
+                    DevActionButton(title: LocalizationHelper.Strings.formatJSON) {
+                        viewModel.formatJSON(from: item)
+                    }
+                    DevActionButton(title: LocalizationHelper.Strings.minifyJSON) {
+                        viewModel.minifyJSON(from: item)
+                    }
+                }
+            case .jwtToken:
+                DevActionButton(title: LocalizationHelper.Strings.copyJWTPayload) {
+                    viewModel.copyJWTPayload(from: item)
+                }
+            case .curlCommand:
+                actionScroll {
+                    DevActionButton(title: LocalizationHelper.Strings.copySwiftURLRequest) {
+                        viewModel.copyCurlAsSwift(from: item)
+                    }
+                    DevActionButton(title: LocalizationHelper.Strings.copyJSFetch) {
+                        viewModel.copyCurlAsJSFetch(from: item)
+                    }
+                }
+            case .unixTimestamp:
+                DevActionButton(title: LocalizationHelper.Strings.copyISO8601) {
+                    viewModel.copyTimestampISO(from: item)
                 }
             case .base64:
                 DevActionButton(title: LocalizationHelper.Strings.decode) {
@@ -314,8 +508,33 @@ struct DevActionsBar: View {
                 DevActionButton(title: LocalizationHelper.Strings.decode) {
                     viewModel.decodeURL(from: item)
                 }
-            default:
-                EmptyView()
+            case .plain, .url, .hexColor:
+                // Case converter — kısa/orta metinler için
+                if item.text.count <= 120, item.text.contains(where: { $0.isLetter }) {
+                    actionScroll {
+                        DevActionButton(title: LocalizationHelper.Strings.camelCase) {
+                            viewModel.copyCamelCase(from: item)
+                        }
+                        DevActionButton(title: LocalizationHelper.Strings.snakeCase) {
+                            viewModel.copySnakeCase(from: item)
+                        }
+                        DevActionButton(title: LocalizationHelper.Strings.kebabCase) {
+                            viewModel.copyKebabCase(from: item)
+                        }
+                        DevActionButton(title: LocalizationHelper.Strings.upperCase) {
+                            viewModel.copyUpperSnakeCase(from: item)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func actionScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                content()
             }
         }
     }
